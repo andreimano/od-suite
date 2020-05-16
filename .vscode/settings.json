@@ -1,0 +1,4 @@
+{
+    "python.pythonPath": "/opt/conda/envs/opencv3/bin/python",
+    "python.formatting.provider": "black"
+}

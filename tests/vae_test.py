@@ -1,7 +1,8 @@
 import sys
-sys.path.append("/root/dns-anomaly/experiments/od-suite/")
+
+sys.path.append("/root/od-suite/")
 from models import AnomalyVAE
-import torch 
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
@@ -10,11 +11,14 @@ from torch.utils.data import DataLoader, Dataset
 
 device = torch.device("cuda")
 
+
 class KDDData(Dataset):
     def __init__(self, data):
         self.data = data.to(device)
+
     def __len__(self):
         return len(self.data)
+
     def __getitem__(self, idx):
         return self.data[idx]
 
@@ -41,11 +45,11 @@ data_rand = torch.randn(20, 768)
 
 dataset = KDDData(data_rand)
 
-print('noseg3')
+print("noseg3")
 
 dataloader = DataLoader(dataset, batch_size=4)
 
-print('noseg4')
+print("noseg4")
 
 optim = torch.optim.Adam(params=model.parameters())
 

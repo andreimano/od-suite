@@ -22,7 +22,7 @@ class AnomalyVAE(nn.Module):
         samples: int = 10,
         encoder: torch.nn.Sequential = None,
         decoder: torch.nn.Sequential = None,
-        beta: float = 1.0,
+        β: float = 1.0,
         latent_dim: int = 2,
         input_dim: int = 768,
         hidden_dim: int = 64,
@@ -49,7 +49,7 @@ class AnomalyVAE(nn.Module):
             logger.info(f"Using default model.")
             logger.info(
                 (
-                    f"Params: beta:{beta}, latent dim:{latent_dim}, input dim:"
+                    f"Params: β:{β}, latent dim:{latent_dim}, input dim:"
                     f"{input_dim}, hidden dim: {hidden_dim}, hidden size: "
                     f"layers: {no_of_layers}"
                 )
@@ -75,32 +75,34 @@ class AnomalyVAE(nn.Module):
             self.encoder = nn.Sequential(*encoder_modules)
             self.decoder = nn.Sequential(*decoder_modules)
 
-        self.mu = nn.Linear(self.encoder[-1].out_features, latent_dim)  # type: ignore
-        self.log_sigma = nn.Linear(self.encoder[-1].out_features, latent_dim)  # type: ignore
+        self.μ = nn.Linear(self.encoder[-1].out_features, latent_dim)  # type: ignore
+        self.log_σ = nn.Linear(self.encoder[-1].out_features, latent_dim)  # type: ignore
 
         self.device = torch.device("cuda")
         logger.info(f"Device: {self.device}")
         logger.debug(f"Encoder: {self.encoder}")
         logger.debug(f"Decoder: {self.decoder}")
-        logger.debug(f"Mu: {self.mu}")
-        logger.debug(f"Log_sigma: {self.log_sigma}")
+        logger.debug(f"μ: {self.μ}")
+        logger.debug(f"Log_σ: {self.log_σ}")
 
     def elbo(
         self,
         input: torch.tensor,
         target: torch.tensor,
-        mu: torch.tensor,
+        μ: torch.tensor,
         log_var: torch.tensor,
-        beta: float,
+        β: float,
     ) -> torch.tensor:
         CE = F.binary_cross_entropy(input, target, reduction="sum")  # type: ignore
-        KL = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp())
-        return CE + beta * KL
+        KL = -0.5 * torch.sum(1 + log_var - μ.pow(2) - log_var.exp())
+        return CE + β * KL
 
-    def reparametrize(self, mu: torch.tensor, log_sigma: torch.tensor) -> torch.tensor:
-        sigma = torch.exp(0.5 * log_sigma)
-        epsilon = torch.rand_like(sigma)
-        return epsilon.mul(sigma).add_(mu)  # type: ignore
+    def reparametrize(
+        self, μ: torch.tensor, log_σ: torch.tensor
+    ) -> torch.tensor:
+        σ = torch.exp(0.5 * log_σ)
+        ɛ = torch.rand_like(σ)
+        return ɛ.mul(σ).add_(μ)  # type: ignore
 
     def calculate_threshold(self):
         pass
@@ -115,7 +117,7 @@ class AnomalyVAE(nn.Module):
         # do inference on the n_samples
         # calculate the reconstruction score flat_score on them
         # instance score is mse, feature score is mse reduction=none
-        reconstruction, mu, log_sigma = self.forward(X)
+        reconstruction, μ, log_σ = self.forward(X)
         reconstruction_score = reconstruction_metric(X, reconstruction)
         pass
 
@@ -123,24 +125,26 @@ class AnomalyVAE(nn.Module):
         self, x: torch.tensor
     ) -> Tuple[torch.tensor, torch.tensor, torch.tensor]:
         encoded = self.encoder(x)
-        mu, log_sigma = self.mu(encoded), self.log_sigma(encoded)
-        z = self.reparametrize(mu, log_sigma)
+        μ, log_σ = self.μ(encoded), self.log_σ(encoded)
+        z = self.reparametrize(μ, log_σ)
         # logger.debug(f"encoded.shape: {encoded.shape}")
-        # logger.debug(f"mu.shape: {mu.shape}")
-        # logger.debug(f"log_sigma.shape: {log_sigma.shape}")
+        # logger.debug(f"μ.shape: {μ.shape}")
+        # logger.debug(f"log_σ.shape: {log_σ.shape}")
         # logger.debug(f"z.shape: {z.shape}")
-        return z, mu, log_sigma
+        return z, μ, log_σ
 
     def decode(self, z: torch.tensor) -> torch.tensor:
         x = self.decoder(z)
         x = F.sigmoid(x)  # type: ignore
         return x
 
-    def forward(self, input: torch.tensor) -> Tuple[torch.tensor, torch.tensor, torch.tensor]:  # type: ignore
+    def forward(
+        self, input: torch.tensor
+    ) -> Tuple[torch.tensor, torch.tensor, torch.tensor]:  # type: ignore
         input = input.to(self.device)
-        z, mu, log_sigma = self.encode(input)
+        z, μ, log_σ = self.encode(input)
         x = F.sigmoid(self.decode(z))  # type: ignore
-        return x, mu, log_sigma
+        return x, μ, log_σ
 
     def fit(
         self,
@@ -155,12 +159,14 @@ class AnomalyVAE(nn.Module):
             for idx, batch in enumerate(pbar_train):
                 optim.zero_grad()
                 batch = batch.to(self.device)
-                reconstruction, mu, log_sigma = self.forward(batch)
-                loss = self.elbo(reconstruction, batch, mu, log_sigma, beta=1)
+                reconstruction, μ, log_σ = self.forward(batch)
+                loss = self.elbo(reconstruction, batch, μ, log_σ, β=1)
                 loss.backward()
                 optim.step()
                 loss_value = loss.detach().cpu().item()
-                pbar_train.set_description_str(f"(TRAIN)Epoch: {e} Loss: {loss_value:.2f}")
+                pbar_train.set_description_str(
+                    f"(TRAIN)Epoch: {e} Loss: {loss_value:.2f}"
+                )
             if self.tensorboard == True:
                 self.writer.add_scalar(f"Loss/train", loss_value, e)
 
@@ -170,8 +176,8 @@ class AnomalyVAE(nn.Module):
                 with torch.no_grad():
                     for idx, batch in enumerate(pbar_val):
                         batch = batch.to(self.device)
-                        reconstruction, mu, log_sigma = self.forward(batch)
-                        loss = self.elbo(batch, reconstruction, mu, log_sigma, beta=1)
+                        reconstruction, μ, log_σ = self.forward(batch)
+                        loss = self.elbo(batch, reconstruction, μ, log_σ, β=1)
                         loss_value = loss.cpu().item()
                         pbar_val.set_description_str(
                             f"(VAL)Epoch: {e} Loss: {loss_value:.2f}"
